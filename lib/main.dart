@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'dart:io' show Platform;
+import 'dart:io';
 import 'dart:async';
 import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'services/turboscan_service.dart';
+import 'services/receipt_storage.dart';
+import 'package:open_filex/open_filex.dart';
 
 void main() {
   runApp(const ReceiptApp());
@@ -73,14 +75,15 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
-  // Files shared back from TurboScan (or other apps)
-  List<SharedMediaFile> _sharedFiles = const [];
+  // Files imported into app storage
+  List<FileSystemEntity> _receipts = const [];
   StreamSubscription? _intentDataStreamSubscription;
 
   @override
   void initState() {
     super.initState();
     _setupSharingIntent();
+    _loadExistingReceipts();
   }
 
   void _setupSharingIntent() {
@@ -91,7 +94,7 @@ class _MainNavigationState extends State<MainNavigation> {
     _intentDataStreamSubscription = rsi.getMediaStream().listen(
       (files) {
         if (!mounted) return;
-        setState(() => _sharedFiles = files);
+        _importAndShow(files);
       },
       onError: (err) {
         // ignore errors silently to avoid breaking UI
@@ -100,13 +103,29 @@ class _MainNavigationState extends State<MainNavigation> {
     // When app is launched by a share intent
     rsi.getInitialMedia().then((files) {
       if (!mounted) return;
-      if (files.isNotEmpty) {
-        setState(() {
-          _currentIndex = 1; // Jump to Receipts tab
-          _sharedFiles = files;
-        });
-      }
+      if (files.isNotEmpty) _importAndShow(files);
     });
+  }
+
+  Future<void> _loadExistingReceipts() async {
+    final list = await ReceiptStorage.listReceipts();
+    if (!mounted) return;
+    setState(() => _receipts = list);
+  }
+
+  Future<void> _importAndShow(List<SharedMediaFile> files) async {
+    final imported = await ReceiptStorage.importSharedFiles(files);
+    final list = await ReceiptStorage.listReceipts();
+    if (!mounted) return;
+    setState(() {
+      _currentIndex = 1; // Jump to Receipts tab
+      _receipts = list;
+    });
+    if (imported > 0 && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Imported $imported file${imported == 1 ? '' : 's'}')),
+      );
+    }
   }
 
   @override
@@ -123,7 +142,7 @@ class _MainNavigationState extends State<MainNavigation> {
         body = const HomePage();
         break;
       case 1:
-        body = ReceiptsPage(sharedFiles: _sharedFiles);
+        body = ReceiptsPage(receipts: _receipts);
         break;
       case 2:
         body = const AddReceiptPage();
@@ -147,7 +166,12 @@ class _MainNavigationState extends State<MainNavigation> {
         selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
         unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) async {
+          setState(() => _currentIndex = index);
+          if (index == 1) {
+            await _loadExistingReceipts();
+          }
+        },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: 'Receipts'),
@@ -174,33 +198,32 @@ class HomePage extends StatelessWidget {
 }
 
 class ReceiptsPage extends StatelessWidget {
-  final List<SharedMediaFile> sharedFiles;
+  final List<FileSystemEntity> receipts;
 
-  const ReceiptsPage({super.key, this.sharedFiles = const []});
+  const ReceiptsPage({super.key, this.receipts = const []});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Receipts')),
-      body: sharedFiles.isEmpty
+      body: receipts.isEmpty
           ? const Center(
               child: Text('List of scanned receipts will appear here'),
             )
           : ListView.separated(
               padding: const EdgeInsets.all(12),
-              itemCount: sharedFiles.length,
+              itemCount: receipts.length,
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, index) {
-                final f = sharedFiles[index];
+                final f = receipts[index];
+                final path = f.path;
+                final name = path.split('/').last;
                 return ListTile(
                   leading: const Icon(Icons.insert_drive_file),
-                  title: Text(f.path.split('/').last),
-                  subtitle: Text(f.type.name),
-                  onTap: () {
-                    // TODO: open/view file, upload, etc.
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Selected: ${f.path}')),
-                    );
+                  title: Text(name),
+                  subtitle: Text(path),
+                  onTap: () async {
+                    await OpenFilex.open(path);
                   },
                 );
               },

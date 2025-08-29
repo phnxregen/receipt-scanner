@@ -38,6 +38,22 @@
                 <data android:mimeType="application/pdf" />
                 <data android:mimeType="image/*" />
             </intent-filter>
+            <!-- Support opening PDFs directly via "Open with" (ACTION_VIEW) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/pdf" android:scheme="content" />
+                <data android:mimeType="application/pdf" android:scheme="file" />
+            </intent-filter>
+            <!-- Optionally accept images from file managers as well -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="image/*" android:scheme="content" />
+                <data android:mimeType="image/*" android:scheme="file" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

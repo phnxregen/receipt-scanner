@@ -16,18 +16,31 @@ class TurboScanService {
   static const String _androidPlayStoreUrl =
       'https://play.google.com/store/apps/details?id=com.piksoft.turboscan';
 
-  // If TurboScan provides a custom URL scheme, add it here.
-  // Replace with the correct scheme/action from the vendor instructions.
-  static const String _iosUrlScheme = 'turboscan://'; // TODO: confirm via API doc
+  // Known/likely TurboScan URL schemes (based on vendor docs / common patterns).
+  // We'll attempt these in order on iOS.
+  static const List<String> _iosUrlSchemes = <String>[
+    'turboscan://',
+    // Some builds may expose a specific action route
+    'turboscan://scan',
+    // Alternate short scheme seen in some integrations
+    'tscan://',
+    // Potential variant bundle schemes
+    'turboscanpro://',
+    'turboscanfree://',
+  ];
+  // Prefer itms-apps to avoid opening Safari when possible
   static const String _iosAppStoreUrl =
-      'https://apps.apple.com/app/id342548956'; // TurboScan app id (to verify)
+      'itms-apps://apps.apple.com/app/id342548956'; // TurboScan app id (to verify)
 
   /// Launches TurboScan if available. Returns true if an attempt to open was made.
   static Future<bool> openTurboScan() async {
     if (Platform.isAndroid) {
       try {
+        // Try to launch the main activity of TurboScan.
+        // Use ACTION_MAIN with CATEGORY_LAUNCHER scoped to the package.
         final intent = AndroidIntent(
-          action: 'action_view',
+          action: 'android.intent.action.MAIN',
+          category: 'android.intent.category.LAUNCHER',
           package: _androidPackage,
         );
         await intent.launch();
@@ -37,24 +50,33 @@ class TurboScanService {
         final uri = Uri.parse(_androidPlayStoreUrl);
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
-          return false;
+          // We opened the store; treat as a handled action.
+          return true;
         }
       }
       return false;
     }
 
     if (Platform.isIOS) {
-      // Try custom scheme if available
-      final scheme = Uri.parse(_iosUrlScheme);
-      if (await canLaunchUrl(scheme)) {
-        await launchUrl(scheme, mode: LaunchMode.externalApplication);
-        return true;
+      // Try multiple candidate URL schemes without relying solely on canLaunch.
+      for (final s in _iosUrlSchemes) {
+        final uri = Uri.parse(s);
+        try {
+          // Try launching directly (canLaunchUrl can be restrictive on iOS)
+          final ok = await launchUrl(uri, mode: LaunchMode.externalNonBrowserApplication);
+          if (ok) return true;
+        } catch (_) {
+          // try next candidate
+        }
       }
-      // Fallback to App Store
-      final uri = Uri.parse(_iosAppStoreUrl);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        return false;
+
+      // Fallback: open App Store listing for TurboScan
+      try {
+        final store = Uri.parse(_iosAppStoreUrl);
+        final ok = await launchUrl(store, mode: LaunchMode.externalApplication);
+        if (ok) return true;
+      } catch (_) {
+        // ignore
       }
       return false;
     }
@@ -68,4 +90,3 @@ class TurboScanService {
     return false;
   }
 }
-

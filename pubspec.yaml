@@ -38,6 +38,7 @@ dependencies:
   android_intent_plus:
   receive_sharing_intent:
   path_provider:
+  open_filex:
 
 dev_dependencies:
   flutter_test:
